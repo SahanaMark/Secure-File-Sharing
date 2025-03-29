@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://cdn.jsdelivr.net/npm/boxicons@2.0.7/css/boxicons.min.css"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      .card {
+        border-radius: 15px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+      }
+      .stat-card {
+        background: linear-gradient(45deg, #4158d0, #c850c0);
+        color: white;
+      }
+      .table-responsive {
+        border-radius: 15px;
+        background: white;
+        padding: 20px;
+      }
+      .chart-container {
+        position: relative;
+        height: 300px;
+        width: 100%;
+      }
+      .table {
+        margin-bottom: 0;
+      }
+      .table th {
+        border-bottom: 2px solid #dee2e6;
+        font-weight: 600;
+        color: #495057;
+      }
+      .table td {
+        vertical-align: middle;
+        padding: 12px 8px;
+      }
+      .badge {
+        padding: 6px 12px;
+        font-weight: 500;
+        font-size: 0.875rem;
+      }
+      .bg-danger {
+        background-color: #dc3545 !important;
+      }
+      .bg-success {
+        background-color: #28a745 !important;
+      }
+      .bg-primary {
+        background-color: #4158d0 !important;
+      }
+      .bg-secondary {
+        background-color: #6c757d !important;
+      }
+      .table tr:hover {
+        background-color: #f8f9fa;
+      }
+      .table td:nth-child(5) {
+        max-width: 400px;
+        white-space: normal;
+        word-wrap: break-word;
+      }
+      .table ul {
+        list-style-type: none;
+        padding-left: 0;
+        margin-top: 0.5rem;
+      }
+      .table ul li {
+        padding: 2px 0;
+        color: #495057;
+      }
+      .table ul li:not(:last-child) {
+        border-bottom: 1px solid #f0f0f0;
+      }
+    </style>
+  </head>
+  <body class="bg-light">
+    <div class="container-fluid py-4">
+      <h1 class="mb-4" style="text-align: center">SaaS Storage Dashboard</h1>
+
+      <!-- Stats Cards -->
+      <div class="row mb-4">
+        <div class="col-md-3">
+          <div class="card stat-card">
+            <div class="card-body">
+              <h5 class="card-title">Total Changes</h5>
+              <h2 id="total-changes">-</h2>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card stat-card">
+            <div class="card-body">
+              <h5 class="card-title">Files Modified</h5>
+              <h2 id="files-modified">-</h2>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card stat-card">
+            <div class="card-body">
+              <h5 class="card-title">Active Users</h5>
+              <h2 id="active-users">-</h2>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card stat-card">
+            <div class="card-body">
+              <h5 class="card-title">Permission Changes</h5>
+              <h2 id="permission-changes">-</h2>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Charts Row -->
+      <div class="row mb-4">
+        <div class="col-md-6">
+          <div class="card">
+            <div class="card-body">
+              <h5 class="card-title">Changes Over Time</h5>
+              <div class="chart-container">
+                <canvas id="timeChart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="card">
+            <div class="card-body">
+              <h5 class="card-title">Changes by Type</h5>
+              <div class="chart-container">
+                <canvas id="typeChart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Changes Table -->
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Recent Changes</h5>
+          <div class="table-responsive">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>File Name</th>
+                  <th>Owner</th>
+                  <th>Change Type</th>
+                  <th>Details</th>
+                  <th>Modified By</th>
+                </tr>
+              </thead>
+              <tbody id="changes-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Fetch and update data every 30 seconds
+      function updateDashboard() {
+        console.log("Fetching dashboard updates...");
+        Promise.all([
+          fetch("/api/logs").then((r) => {
+            if (!r.ok) throw new Error(`HTTP error! status: ${r.status}`);
+            return r.json();
+          }),
+          fetch("/api/stats").then((r) => {
+            if (!r.ok) throw new Error(`HTTP error! status: ${r.status}`);
+            return r.json();
+          }),
+        ])
+          .then(([logsResponse, statsResponse]) => {
+            if (logsResponse.status === "error") {
+              throw new Error(logsResponse.message);
+            }
+            if (statsResponse.status === "error") {
+              throw new Error(statsResponse.message);
+            }
+
+            console.log("Received logs:", logsResponse.data);
+            console.log("Received stats:", statsResponse.data);
+
+            updateStats(statsResponse.data);
+            updateCharts(statsResponse.data);
+            updateTable(logsResponse.data);
+          })
+          .catch((error) => {
+            console.error("Error updating dashboard:", error);
+          });
+      }
+
+      function updateStats(stats) {
+        // Update stats cards with proper error handling
+        try {
+          document.getElementById("total-changes").textContent =
+            stats.total_changes || 0;
+          document.getElementById("files-modified").textContent = Object.keys(
+            stats.most_active_files || {}
+          ).length;
+          document.getElementById("active-users").textContent = Object.keys(
+            stats.most_active_users || {}
+          ).length;
+
+          const permissionChanges = stats.permission_changes || {};
+          const totalPermChanges = Object.values(permissionChanges).reduce(
+            (a, b) => a + b,
+            0
+          );
+          document.getElementById("permission-changes").textContent =
+            totalPermChanges;
+        } catch (error) {
+          console.error("Error updating stats:", error);
+        }
+      }
+
+      function updateCharts(stats) {
+        try {
+          // Time series chart
+          const timeCtx = document.getElementById("timeChart");
+          if (timeCtx.chart) {
+            timeCtx.chart.destroy();
+          }
+
+          const timeData = stats.changes_over_time || {};
+          const sortedDates = Object.keys(timeData).sort();
+
+          timeCtx.chart = new Chart(timeCtx, {
+            type: "line",
+            data: {
+              labels: sortedDates,
+              datasets: [
+                {
+                  label: "Changes",
+                  data: sortedDates.map((date) => timeData[date]),
+                  borderColor: "#4158D0",
+                  tension: 0.4,
+                  fill: false,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              scales: {
+                y: {
+                  beginAtZero: true,
+                  ticks: {
+                    stepSize: 1,
+                  },
+                },
+              },
+            },
+          });
+
+          // Changes by type chart
+          const typeCtx = document.getElementById("typeChart");
+          if (typeCtx.chart) {
+            typeCtx.chart.destroy();
+          }
+
+          const typeData = stats.changes_by_type || {};
+          typeCtx.chart = new Chart(typeCtx, {
+            type: "doughnut",
+            data: {
+              labels: Object.keys(typeData),
+              datasets: [
+                {
+                  data: Object.values(typeData),
+                  backgroundColor: [
+                    "#4158D0",
+                    "#C850C0",
+                    "#FFCC70",
+                    "#FF90BC",
+                    "#4CAF50",
+                    "#FF5722",
+                  ],
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  position: "right",
+                },
+              },
+            },
+          });
+        } catch (error) {
+          console.error("Error updating charts:", error);
+        }
+      }
+
+      function updateTable(logs) {
+        try {
+          const tbody = document.getElementById("changes-table");
+          tbody.innerHTML = "";
+
+          if (!Array.isArray(logs) || logs.length === 0) {
+            const tr = document.createElement("tr");
+            tr.innerHTML =
+              '<td colspan="6" class="text-center">No changes detected yet</td>';
+            tbody.appendChild(tr);
+            return;
+          }
+
+          // Deduplicate logs based on file_id and timestamp (rounded to the nearest minute)
+          const uniqueLogs = logs.reduce((acc, log) => {
+            const key = `${log.file_id}_${Math.floor(
+              new Date(log.timestamp).getTime() / 60000
+            )}`;
+            if (
+              !acc[key] ||
+              new Date(log.timestamp) > new Date(acc[key].timestamp)
+            ) {
+              acc[key] = log;
+            }
+            return acc;
+          }, {});
+
+          // Sort logs by timestamp in descending order and take the last 10
+          Object.values(uniqueLogs)
+            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+            .slice(0, 10)
+            .forEach((log) => {
+              const tr = document.createElement("tr");
+              const details = log.details || {};
+
+              // Format the details based on the change type
+              let changeType = details.type || "unknown";
+              let detailsText = "";
+              let modifierText = "";
+
+              // Get modifier information
+              const modifier = details.modified_by || {
+                name: "Unknown",
+                email: "Unknown",
+              };
+              modifierText = `${modifier.name}${
+                modifier.email !== "Unknown" ? ` (${modifier.email})` : ""
+              }`;
+
+              if (changeType === "file_deleted") {
+                changeType = "File Deleted";
+                detailsText = `File "${details.file_name}" was deleted`;
+              } else if (changeType === "new_file") {
+                changeType = "New File";
+                const permissions = details.permissions || [];
+                detailsText = `New file created with ${permissions.length} permission(s):<br>`;
+                detailsText += '<ul class="mb-0">';
+                permissions.forEach((perm) => {
+                  const displayName =
+                    perm.displayName || perm.emailAddress || "Unknown";
+                  const email = perm.emailAddress
+                    ? ` (${perm.emailAddress})`
+                    : "";
+                  const role = perm.role || "Unknown role";
+                  detailsText += `<li>${displayName}${email}: ${role}</li>`;
+                });
+                detailsText += "</ul>";
+              } else if (changeType === "changes") {
+                changeType = "Modified";
+                const changes = details.changes || [];
+                detailsText = changes
+                  .map((change) => {
+                    switch (change.type) {
+                      case "name_change":
+                        return `Renamed from "${change.old}" to "${change.new}"`;
+                      case "permission_added":
+                        const displayName =
+                          change.user_name || change.user || "Unknown";
+                        return `Added ${change.role} permission for ${displayName} (${change.user})`;
+                      case "permission_removed":
+                        return `Removed permission for ${
+                          change.user_name || change.user
+                        }`;
+                      case "permission_changed":
+                        return `Changed ${
+                          change.user_name || change.user
+                        }'s role from ${change.old_role} to ${change.new_role}`;
+                      default:
+                        return change.type;
+                    }
+                  })
+                  .join("<br>");
+              }
+
+              tr.innerHTML = `
+                <td>${formatTimestamp(log.timestamp)}</td>
+                <td>${log.file_name || "Unknown"}</td>
+                <td>${log.owner || "Unknown"}</td>
+                <td><span class="badge ${getBadgeClass(
+                  changeType
+                )}">${changeType}</span></td>
+                <td>${detailsText}</td>
+                <td>${modifierText}</td>
+              `;
+              tbody.appendChild(tr);
+            });
+        } catch (error) {
+          console.error("Error updating table:", error);
+        }
+      }
+
+      function formatTimestamp(timestamp) {
+        if (!timestamp) return "Unknown";
+        try {
+          const date = new Date(timestamp);
+          return date.toLocaleString("en-US", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          });
+        } catch (e) {
+          return timestamp;
+        }
+      }
+
+      function getBadgeClass(changeType) {
+        switch (changeType.toLowerCase()) {
+          case "file deleted":
+            return "bg-danger";
+          case "new file":
+            return "bg-success";
+          case "modified":
+            return "bg-primary";
+          default:
+            return "bg-secondary";
+        }
+      }
+
+      // Initial update
+      updateDashboard();
+
+      // Update every 30 seconds
+      setInterval(updateDashboard, 30000);
+    </script>
+  </body>
+</html>
